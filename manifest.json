@@ -1,0 +1,16 @@
+{
+  "name": "ARATS Planner",
+  "short_name": "ARATS",
+  "start_url": "./index.html",
+  "display": "standalone",
+  "background_color": "#ffffff",
+  "theme_color": "#3498db",
+  "icons": [
+    {
+      "src": "https://cdn-icons-png.flaticon.com/512/3233/3233483.png",
+      "sizes": "512x512",
+      "type": "image/png",
+      "purpose": "any maskable"
+    }
+  ]
+}
