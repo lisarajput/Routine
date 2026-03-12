@@ -1,0 +1,383 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>ARATS Activity Web App</title>
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/html2pdf.js/0.10.1/html2pdf.bundle.min.js"></script>
+    <link rel="manifest" href="manifest.json">
+    <style>
+        /* White Background */
+        body {
+            background-color: #ffffff;
+            font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif;
+            margin: 0;
+            padding: 20px 0;
+            display: flex;
+            flex-direction: column;
+            align-items: center;
+            overflow-x: hidden;
+            touch-action: pan-y; /* Allows vertical scroll, helps with horizontal swipe */
+        }
+
+        /* App Install Popup */
+        #install-popup {
+            display: none;
+            position: fixed;
+            top: 20px;
+            left: 50%;
+            transform: translateX(-50%);
+            background: #ffffff;
+            padding: 15px 25px;
+            box-shadow: 0 4px 15px rgba(0,0,0,0.3);
+            border-radius: 10px;
+            z-index: 1000;
+            text-align: center;
+            border-left: 5px solid #3498db;
+            animation: slideDown 0.5s ease-out;
+        }
+        #install-popup p { margin: 0 0 10px 0; font-weight: bold; color: #333; }
+        #install-popup button {
+            background: #3498db; color: white; border: none; padding: 8px 15px;
+            border-radius: 5px; cursor: pointer; font-weight: bold;
+        }
+        #install-popup button.close-btn { background: #e74c3c; margin-left: 5px; }
+        @keyframes slideDown { from { top: -50px; opacity: 0; } to { top: 20px; opacity: 1; } }
+
+        /* Slider Container */
+        .slider-window {
+            width: 210mm;
+            overflow: hidden;
+            position: relative;
+            background: #ffffff;
+            box-shadow: 0 0 10px rgba(0,0,0,0.1);
+        }
+
+        .pages-wrapper {
+            display: flex;
+            transition: transform 0.4s ease-in-out;
+            width: fit-content;
+        }
+
+        /* A4 Page Setup */
+        .a4-page {
+            width: 210mm;
+            min-height: 297mm;
+            background: #ffffff;
+            padding: 12mm;
+            box-sizing: border-box;
+            position: relative;
+            flex-shrink: 0;
+        }
+
+        /* Headers */
+        .page-header { text-align: center; margin-bottom: 20px; }
+        .page-header h1 { color: #2c3e50; font-size: 22px; margin: 0 0 5px 0; text-transform: uppercase; }
+        .page-header p { color: #7f8c8d; font-size: 13px; margin: 0; }
+
+        /* Table Setup */
+        table { width: 100%; border-collapse: collapse; table-layout: fixed; }
+        th, td { border: 1px solid #bdc3c7; padding: 8px 4px; text-align: center; font-size: 11px; word-wrap: break-word; }
+        th { color: white; font-weight: bold; font-size: 12px; padding: 10px 2px; }
+        th span { font-size: 10px; font-weight: normal; display: block; margin-top: 3px; opacity: 0.9; }
+        
+        /* Activity Cells */
+        td { cursor: pointer; transition: background 0.2s; user-select: none; }
+        td:hover { background-color: #f1f2f6; }
+        
+        /* Completed State */
+        td.completed {
+            background-color: #2ecc71 !important;
+            color: white;
+            font-weight: bold;
+            border-color: #27ae60;
+        }
+
+        /* Page Indicator */
+        .page-indicator {
+            margin-top: 15px;
+            font-size: 14px;
+            font-weight: bold;
+            color: #7f8c8d;
+            background: #f1f2f6;
+            padding: 5px 15px;
+            border-radius: 20px;
+        }
+
+        /* Print & Download Icons (Bottom Right of Last Page) */
+        .action-icons {
+            position: absolute;
+            bottom: 15mm;
+            right: 15mm;
+            display: flex;
+            flex-direction: column;
+            gap: 10px;
+        }
+        .icon-btn {
+            background: #ecf0f1; border: 1px solid #bdc3c7; border-radius: 50%;
+            width: 45px; height: 45px; display: flex; justify-content: center;
+            align-items: center; font-size: 22px; cursor: pointer; transition: 0.3s;
+            box-shadow: 0 2px 5px rgba(0,0,0,0.2);
+            text-decoration: none;
+            color: inherit;
+        }
+        .icon-btn:hover { background: #dfe6e9; transform: scale(1.1); }
+
+        /* Print & PDF Export Mode - Forces vertical stacking for accurate capture */
+        body.export-mode { padding: 0; background-color: #ffffff; }
+        body.export-mode .slider-window { width: 100%; box-shadow: none; overflow: visible; }
+        body.export-mode .pages-wrapper { flex-direction: column; transform: none !important; width: 100%; }
+        body.export-mode .a4-page { box-shadow: none; page-break-after: always; margin-bottom: 0; }
+        body.export-mode .page-indicator, body.export-mode .action-icons, body.export-mode #install-popup { display: none !important; }
+    </style>
+</head>
+<body>
+
+    <div id="install-popup">
+        <p>📲 Install ARATS Planner App!</p>
+        <button id="install-btn">Install</button>
+        <button class="close-btn" onclick="document.getElementById('install-popup').style.display='none'">✖</button>
+    </div>
+
+    <div class="slider-window" id="planner-container">
+        <div class="pages-wrapper" id="pages-wrapper">
+            </div>
+    </div>
+
+    <div class="page-indicator" id="page-indicator">Page 1 / 3</div>
+
+    <script>
+        // --- 1. CONFIGURATION & DATA ---
+        const activitiesList = [
+            "Exercise + Parallel P21", "CAP + SIM", "Parcham", "NCERT", "P21", 
+            "Mathematics", "Reasoning", "B.Sc Mathematics", "Objective Resolution", 
+            "Answer Writing", "Extracurricular", "NCERT + Self Control"
+        ];
+        
+        const dayNames = ["Sunday", "Monday", "Tuesday", "Wednesday", "Thursday", "Friday", "Saturday"];
+        const headerColors = ["#e74c3c", "#e67e22", "#f1c40f", "#2ecc71", "#1abc9c", "#3498db", "#9b59b6"];
+        
+        let currentPage = 0;
+        const totalPages = 3;
+
+        function shuffleArray(array) {
+            let arr = [...array];
+            for (let i = arr.length - 1; i > 0; i--) {
+                const j = Math.floor(Math.random() * (i + 1));
+                [arr[i], arr[j]] = [arr[j], arr[i]];
+            }
+            return arr;
+        }
+
+        // --- NEW: GENERATE ONCE AND FREEZE SCHEDULE ---
+        let fullScheduleData = [];
+        // Check if schedule is already generated and saved in browser
+        const savedSchedule = localStorage.getItem('arats_fixed_schedule');
+        
+        if (savedSchedule) {
+            fullScheduleData = JSON.parse(savedSchedule); // Load saved layout
+        } else {
+            // Generate schedule for 20 days exactly ONE time
+            for(let i = 0; i < 20; i++) {
+                fullScheduleData.push(shuffleArray(activitiesList));
+            }
+            // Save it permanently in the browser
+            localStorage.setItem('arats_fixed_schedule', JSON.stringify(fullScheduleData));
+        }
+
+        // --- 2. GENERATE DATES (12 March to 31 March) ---
+        let scheduleDates = [];
+        let startDate = new Date(2026, 2, 12); 
+        for (let i = 0; i < 20; i++) {
+            let currentDate = new Date(startDate);
+            currentDate.setDate(startDate.getDate() + i);
+            scheduleDates.push({
+                dateStr: `${currentDate.getDate()} March`,
+                dayStr: dayNames[currentDate.getDay()]
+            });
+        }
+
+        // --- 3. BUILD DOM PAGES ---
+        const wrapper = document.getElementById('pages-wrapper');
+        const pageChunks = [scheduleDates.slice(0, 7), scheduleDates.slice(7, 14), scheduleDates.slice(14, 20)];
+
+        let globalDayIndex = 0; // To keep track of which day we are on across pages
+
+        pageChunks.forEach((chunk, pageIndex) => {
+            let pageDiv = document.createElement('div');
+            pageDiv.className = 'a4-page';
+            
+            pageDiv.innerHTML = `
+                <div class="page-header">
+                    <h1>ARATS Activity Planner</h1>
+                    <p>March 2026 | Page ${pageIndex + 1} of 3</p>
+                </div>
+            `;
+
+            let table = document.createElement('table');
+            let thead = document.createElement('thead');
+            let headerRow = document.createElement('tr');
+            
+            chunk.forEach((dayObj, i) => {
+                let th = document.createElement('th');
+                th.innerHTML = `${dayObj.dateStr}<br><span>(${dayObj.dayStr})</span>`;
+                th.style.backgroundColor = headerColors[i % headerColors.length];
+                if (headerColors[i % headerColors.length] === "#f1c40f") th.style.color = "#333";
+                headerRow.appendChild(th);
+            });
+            thead.appendChild(headerRow);
+            table.appendChild(thead);
+
+            let tbody = document.createElement('tbody');
+
+            for (let row = 0; row < 12; row++) {
+                let tr = document.createElement('tr');
+                chunk.forEach((dayObj, col) => {
+                    let td = document.createElement('td');
+                    // Pick the activity from our frozen fullScheduleData
+                    let activityName = fullScheduleData[globalDayIndex + col][row];
+                    td.innerText = activityName;
+                    
+                    let cellId = `${dayObj.dateStr}-${activityName.replace(/\s+/g, '')}`;
+                    td.id = cellId;
+
+                    if(localStorage.getItem(cellId) === 'done') {
+                        td.classList.add('completed');
+                    }
+
+                    let clickCount = 0;
+                    let clickTimer;
+                    td.addEventListener('click', function() {
+                        if (!this.classList.contains('completed')) {
+                            this.classList.add('completed');
+                            localStorage.setItem(this.id, 'done');
+                            clickCount = 0;
+                        } else {
+                            clickCount++;
+                            if (clickCount === 3) {
+                                this.classList.remove('completed');
+                                localStorage.removeItem(this.id);
+                                clickCount = 0;
+                            }
+                            clearTimeout(clickTimer);
+                            clickTimer = setTimeout(() => { clickCount = 0; }, 600);
+                        }
+                    });
+                    tr.appendChild(td);
+                });
+                tbody.appendChild(tr);
+            }
+            table.appendChild(tbody);
+            pageDiv.appendChild(table);
+
+            if (pageIndex === 2) {
+                let iconsDiv = document.createElement('div');
+                iconsDiv.className = 'action-icons';
+                iconsDiv.innerHTML = `
+                    <div class="icon-btn" onclick="printPage()" title="Print">🖨️</div>
+                    <div class="icon-btn" onclick="downloadPDF()" title="Download PDF">⬇️</div>
+                `;
+                pageDiv.appendChild(iconsDiv);
+            }
+
+            wrapper.appendChild(pageDiv);
+            globalDayIndex += chunk.length; // Move index forward for the next page
+        });
+
+        // --- 4. SWIPE TO SLIDE LOGIC ---
+        let touchstartX = 0;
+        let touchendX = 0;
+        const sliderContainer = document.getElementById('planner-container');
+
+        sliderContainer.addEventListener('touchstart', function(event) {
+            touchstartX = event.changedTouches[0].screenX;
+        }, false);
+
+        sliderContainer.addEventListener('touchend', function(event) {
+            touchendX = event.changedTouches[0].screenX;
+            handleGesture();
+        }, false);
+
+        function handleGesture() {
+            let threshold = 50; 
+            if (touchendX < touchstartX - threshold) {
+                if (currentPage < totalPages - 1) {
+                    currentPage++;
+                    updateSlider();
+                }
+            }
+            if (touchendX > touchstartX + threshold) {
+                if (currentPage > 0) {
+                    currentPage--;
+                    updateSlider();
+                }
+            }
+        }
+
+        function updateSlider() {
+            let slideDistance = -(currentPage * 210); 
+            wrapper.style.transform = `translateX(${slideDistance}mm)`;
+            document.getElementById('page-indicator').innerText = `Page ${currentPage + 1} / 3`;
+        }
+
+        // --- 5. EXPORT / PDF LOGIC FIX ---
+        function printPage() {
+            document.body.classList.add('export-mode');
+            setTimeout(() => {
+                window.print();
+                document.body.classList.remove('export-mode');
+            }, 500);
+        }
+
+        function downloadPDF() {
+            const element = document.getElementById('planner-container');
+            document.body.classList.add('export-mode');
+            
+            setTimeout(() => {
+                const opt = {
+                    margin:       0,
+                    filename:     'ARATS_March_Planner.pdf',
+                    image:        { type: 'jpeg', quality: 1.0 },
+                    html2canvas:  { scale: 2, useCORS: true, scrollY: 0 }, 
+                    jsPDF:        { unit: 'mm', format: 'a4', orientation: 'portrait' }
+                };
+
+                html2pdf().set(opt).from(element).save().then(() => {
+                    document.body.classList.remove('export-mode');
+                });
+            }, 500);
+        }
+
+        // --- 6. PWA INSTALL POPUP LOGIC ---
+        let deferredPrompt;
+        
+        window.addEventListener('beforeinstallprompt', (e) => {
+            e.preventDefault();
+            deferredPrompt = e;
+            document.getElementById('install-popup').style.display = 'block';
+        });
+
+        document.getElementById('install-btn').addEventListener('click', async () => {
+            document.getElementById('install-popup').style.display = 'none';
+            if (deferredPrompt) {
+                deferredPrompt.prompt();
+                const { outcome } = await deferredPrompt.userChoice;
+                deferredPrompt = null;
+            } else {
+                alert("Installation already done or not supported on this browser.");
+            }
+        });
+
+        // Register Service Worker
+        if ('serviceWorker' in navigator) {
+            window.addEventListener('load', () => {
+                navigator.serviceWorker.register('sw.js').then(registration => {
+                    console.log('SW registered');
+                }).catch(err => {
+                    console.log('SW registration failed');
+                });
+            });
+        }
+    </script>
+</body>
+</html>
